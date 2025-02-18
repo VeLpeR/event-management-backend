@@ -71,14 +71,23 @@ app.post('/api/login', async (req, res) => {
 // Event Management
 app.post('/api/events', authMiddleware, async (req, res) => {
     try {
+        const { name, date, type } = req.body;
+
+        // Check if an event with the same name, date, and type already exists
+        const existingEvent = await Event.findOne({ name, date, type });
+
+        if (existingEvent) {
+            return res.status(400).json({ error: 'Event with the same name, date, and type already exists' });
+        }
+
         const event = new Event(req.body);
-        console.log(req.body)
         await event.save();
         res.json(event);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
+
 
 app.get('/api/events', authMiddleware, async (req, res) => {
     const { page = 1, limit = 2 } = req.query;
@@ -123,6 +132,14 @@ app.get('/api/events/filter', authMiddleware, async (req, res) => {
     }
 });
 
+app.get('/api/events/:id', authMiddleware, async (req, res) => {
+    try {
+        const event = await Event.findById(req.params.id);
+        res.json(event);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
 app.put('/api/events/:id', authMiddleware, async (req, res) => {
     try {
         const event = await Event.findByIdAndUpdate(req.params.id, req.body, { new: true });
@@ -134,8 +151,26 @@ app.put('/api/events/:id', authMiddleware, async (req, res) => {
 
 app.delete('/api/events/:id', authMiddleware, async (req, res) => {
     try {
-        await Event.findByIdAndDelete(req.params.id);
-        res.json({ message: 'Event deleted' });
+        const { id } = req.params;
+
+        // Check if ID is a valid MongoDB ObjectId
+        if (!id.match(/^[0-9a-fA-F]{24}$/)) {
+            return res.status(400).json({ error: 'Invalid event ID' });
+        }
+
+        // Check if the event exists
+        const event = await Event.findById(id);
+        if (!event) {
+            return res.status(404).json({ error: 'Event not found' });
+        }
+
+        // Delete attendees associated with the event
+        await Attendee.deleteMany({ eventId: id });
+
+        // Delete the event
+        await Event.findByIdAndDelete(id);
+
+        res.json({ message: 'Event and associated attendees deleted successfully' });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
